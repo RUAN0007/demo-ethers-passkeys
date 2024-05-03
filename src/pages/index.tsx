@@ -1,43 +1,19 @@
-import Image from "next/image";
-import styles from "./index.module.css";
-import axios from "axios";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { getWebAuthnAttestation, TurnkeyClient } from "@turnkey/http";
-import { WebauthnStamper } from "@turnkey/webauthn-stamper";
 import { TurnkeySigner } from "@turnkey/ethers";
+import { useTurnkey } from "@turnkey/sdk-react";
+import Image from "next/image";
+import axios from "axios";
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import styles from "./index.module.css";
 import { TWalletDetails } from "../types";
 
 type subOrgFormData = {
   subOrgName: string;
 };
 
-type privateKeyFormData = {
-  privateKeyName: string;
-};
-
 type signingFormData = {
   messageToSign: string;
 };
-
-const generateRandomBuffer = (): ArrayBuffer => {
-  const arr = new Uint8Array(32);
-  crypto.getRandomValues(arr);
-  return arr.buffer;
-};
-
-const base64UrlEncode = (challenge: ArrayBuffer): string => {
-  return Buffer.from(challenge)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
-};
-
-type TPrivateKeyState = {
-  id: string;
-  address: string;
-} | null;
 
 type TSignedMessage = {
   message: string;
@@ -51,9 +27,10 @@ const humanReadableDateTime = (): string => {
 };
 
 export default function Home() {
+  const { turnkey, passkeyClient } = useTurnkey();
+
+  // Wallet is used as a proxy for logged-in state
   const [wallet, setWallet] = useState<TWalletState>(null);
-  const [subOrgId, setSubOrgId] = useState<string | null>(null);
-  const [privateKey, setPrivateKey] = useState<TPrivateKeyState>(null);
   const [signedMessage, setSignedMessage] = useState<TSignedMessage>(null);
 
   const { handleSubmit: subOrgFormSubmit } = useForm<subOrgFormData>();
@@ -62,24 +39,22 @@ export default function Home() {
   const { register: _loginFormRegister, handleSubmit: loginFormSubmit } =
     useForm();
 
-  const stamper = new WebauthnStamper({
-    rpId: "localhost",
+  // First, logout user if there is no current wallet set
+  useEffect(() => {
+    (async () => {
+      if (!wallet) {
+        await turnkey?.logoutUser();
+      }
+    })();
   });
-
-  const passkeyHttpClient = new TurnkeyClient(
-    {
-      baseUrl: process.env.NEXT_PUBLIC_TURNKEY_API_BASE_URL!,
-    },
-    stamper
-  );
 
   const signMessage = async (data: signingFormData) => {
     if (!wallet) {
-      throw new Error("sub-org id or private key not found");
+      throw new Error("wallet not found");
     }
 
     const ethersSigner = new TurnkeySigner({
-      client: passkeyHttpClient,
+      client: passkeyClient!,
       organizationId: wallet.subOrgId,
       signWith: wallet.address,
     });
@@ -95,65 +70,67 @@ export default function Home() {
 
 
   const createSubOrgAndWallet = async () => {
-    const challenge = generateRandomBuffer();
     const subOrgName = `Turnkey Ethers+Passkey Demo - ${humanReadableDateTime()}`;
-    const authenticatorUserId = generateRandomBuffer();
-
-    const attestation = await getWebAuthnAttestation({
+    const credential = await passkeyClient?.createUserPasskey({
       publicKey: {
         rp: {
           id: "localhost",
           name: "Turnkey Ethers Passkey Demo",
         },
-        challenge,
-        pubKeyCredParams: [
-          {
-            type: "public-key",
-            alg: -7,
-          },
-          {
-            type: "public-key",
-            alg: -257,
-          },
-        ],
         user: {
-          id: authenticatorUserId,
           name: subOrgName,
           displayName: subOrgName,
         },
       },
     });
 
+    if (!credential?.encodedChallenge || !credential?.attestation) {
+      return false;
+    }
+
     const res = await axios.post("/api/createSubOrg", {
       subOrgName: subOrgName,
-      attestation,
-      challenge: base64UrlEncode(challenge),
+      challenge: credential?.encodedChallenge,
+      attestation: credential?.attestation,
     });
 
     const response = res.data as TWalletDetails;
-    console.log(response)
     setWallet(response);
   };
 
-
   const login = async () => {
     try {
-      // We use the parent org ID, which we know at all times...
-      const signedRequest = await passkeyHttpClient.stampGetWhoami({
-        organizationId: process.env.NEXT_PUBLIC_ORGANIZATION_ID!,
-      });
-      // ...to get the sub-org ID, which we don't know at this point because we don't
-      // have a DB. Note that we are able to perform this lookup by using the
-      // credential ID from the users WebAuthn stamp.
-      // In our login endpoint we also fetch wallet details after we get the sub-org ID
-      // (our backend API key can do this: parent orgs have read-only access to their sub-orgs)
-      const res = await axios.post("/api/login", signedRequest);
-      if (res.status !== 200) {
-        throw new Error(`error while logging in (${res.status}): ${res.data}`);
+      // Initiate login (read-only passkey session)
+      const loginResponse = await passkeyClient?.login();
+      if (!loginResponse?.organizationId) {
+        return;
       }
 
-      const response = res.data as TWalletDetails;
-      setWallet(response);
+      const currentUserSession = await turnkey?.currentUserSession();
+      if (!currentUserSession) {
+        return;
+      }
+
+      const walletsResponse = await currentUserSession?.getWallets();
+      if (!walletsResponse?.wallets[0].walletId) {
+        return;
+      }
+
+      const walletId = walletsResponse?.wallets[0].walletId;
+      const walletAccountsResponse =
+        await currentUserSession?.getWalletAccounts({
+          organizationId: loginResponse?.organizationId,
+          walletId,
+        });
+      if (!walletAccountsResponse?.accounts[0].address) {
+        return;
+      }
+
+      setWallet({
+        id: walletId,
+        address: walletAccountsResponse?.accounts[0].address,
+        subOrgId: loginResponse.organizationId,
+      } as TWalletDetails);
     } catch (e: any) {
       const message = `caught error: ${e.toString()}`;
       console.error(message);
