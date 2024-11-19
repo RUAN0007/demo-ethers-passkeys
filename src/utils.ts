@@ -9,7 +9,7 @@ import {
 } from "@solana/web3.js";
 import { TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import type { TurnkeySigner } from "@turnkey/solana";
-import { createAssociatedTokenAccountInstruction } from "@solana/spl-token";
+import { createAssociatedTokenAccountInstruction, createTransferCheckedInstruction } from "@solana/spl-token";
 import bs58 from "bs58";
 
 export function print(header: string, body: string): void {
@@ -148,4 +148,42 @@ export async function createTokenAccount(
   console.log("Broadcasting token account creation transaction...");
 
   await broadcast(connection, createTokenAccountTx);
+}
+
+
+export async function createTokenTransfer(
+  turnkeySigner: TurnkeySigner,
+  connection: Connection,
+  solAddress: string,
+  senderTokenAccount: PublicKey,
+  mintAccount: PublicKey,
+  recipientTokenAccount: PublicKey,
+  amount : number,
+): Promise<any> {
+  const fromKey = new PublicKey(solAddress);
+
+  let transferTx = new Transaction().add(
+    createTransferCheckedInstruction(
+      senderTokenAccount,
+      mintAccount,
+      recipientTokenAccount,
+      fromKey, // from's owner
+      amount,
+      9,
+      [], 
+      TOKEN_2022_PROGRAM_ID,
+    )
+  );
+
+  // Get a recent block hash
+  transferTx.recentBlockhash = await recentBlockhash();
+  // Set the signer
+  transferTx.feePayer = fromKey;
+
+  await turnkeySigner.addSignature(transferTx, solAddress);
+
+  console.log("Broadcasting token transfer transaction...");
+
+  const txnHash = await broadcast(connection, transferTx);
+  return txnHash;
 }

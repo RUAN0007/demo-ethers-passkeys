@@ -6,7 +6,7 @@ import { useState, useEffect, use } from "react";
 import { useForm } from "react-hook-form";
 import styles from "./index.module.css";
 import { TWalletDetails } from "../types";
-import { connect, createTokenAccount } from "../utils";
+import { connect, createTokenAccount, createTokenTransfer } from "../utils";
 import { getAccount, getAssociatedTokenAddress, TOKEN_2022_PROGRAM_ID, TokenAccountNotFoundError} from "@solana/spl-token";
 import {
   Connection,
@@ -25,6 +25,11 @@ type subOrgFormData = {
 
 type signingFormData = {
   messageToSign: string;
+};
+
+type MemeTransferFormData = {
+  recipientTokenAddr: string;
+  amount: number;
 };
 
 type TSignedMessage = {
@@ -71,6 +76,8 @@ export default function Home() {
     useForm();
   const { handleSubmit: submitRefreshMemeBalance } =
     useForm();
+  const { register: memeTransferRegister, handleSubmit: submitMemeTransfer } =
+    useForm<MemeTransferFormData>();
 
   const mintAccount = new PublicKey("3egm9YNvvsL2KrX1kg8p4ngWtm1P5AJJYruJrUSh87zP");
 
@@ -101,6 +108,38 @@ export default function Home() {
       }
     })();
   }, [wallet]);
+
+  const transferMeme = async (data: MemeTransferFormData) => {
+    if (!wallet) {
+      throw new Error("wallet not found");
+    }
+
+    const fromKey = new PublicKey(wallet.address);
+
+    const tokenAccAddr = await getAssociatedTokenAddress(
+      mintAccount,
+      fromKey,
+      false,
+      TOKEN_2022_PROGRAM_ID, 
+    );
+
+    const signer = new TurnkeySigner({
+      client: passkeyClient!,
+      organizationId: wallet.subOrgId,
+    });
+
+    const txnHash = await createTokenTransfer(
+      signer,
+      connection,
+      wallet.address,
+      tokenAccAddr,
+      mintAccount,
+      new PublicKey(data.recipientTokenAddr),
+      data.amount*1e9, 
+    );
+
+    alert(`Successfully transferred ${data.amount} meme coin to ${data.recipientTokenAddr}, txn hash: ${txnHash}`);
+  };
 
   const refreshSolanaBalance = async () => {
     if (!wallet) {
@@ -425,10 +464,10 @@ export default function Home() {
         </div>
       )} */}
 
-      {wallet !== null &&  (
+      {solanaBalance !== null &&  (
         <div>
           Solana Balance: {" "}
-          <span className={styles.code}>{solanaBalance?.balance / LAMPORTS_PER_SOL}</span>
+          <span className={styles.code}>{solanaBalance!.balance / LAMPORTS_PER_SOL}</span>
           {" "}
           Sols
 
@@ -478,6 +517,29 @@ export default function Home() {
               className={styles.button}
               type="submit"
               value="Refresh"
+            />
+          </form>
+          <br />
+          Transfer: 
+          <form
+            className={styles.form}
+            onSubmit={submitMemeTransfer(transferMeme)}
+          >
+            <input
+              className={styles.input}
+              {...memeTransferRegister("recipientTokenAddr")}
+              placeholder="recipient token account address"
+              value="apzaAjS9SJo9Nv1NtyzKuKv4P21rZZgRofEzKdK6BZf"
+            />
+            <input
+              className={styles.input}
+              {...memeTransferRegister("amount")}
+              placeholder="amount"
+            />
+            <input
+              className={styles.button}
+              type="submit"
+              value="Transfer"
             />
           </form>
           <hr /> 
