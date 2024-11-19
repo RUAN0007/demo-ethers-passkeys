@@ -1,11 +1,22 @@
 import { useTurnkey } from "@turnkey/sdk-react";
+import { TurnkeySigner } from "@turnkey/solana";
 import Image from "next/image";
 import axios from "axios";
-import { useState, useEffect } from "react";
+import { useState, useEffect, use } from "react";
 import { useForm } from "react-hook-form";
 import styles from "./index.module.css";
 import { TWalletDetails } from "../types";
-import { connect } from "../utils";
+import { connect, createTokenAccount } from "../utils";
+import { getAccount, getAssociatedTokenAddress, TOKEN_2022_PROGRAM_ID, TokenAccountNotFoundError} from "@solana/spl-token";
+import {
+  Connection,
+  sendAndConfirmRawTransaction,
+  PublicKey,
+  LAMPORTS_PER_SOL,
+  TransactionConfirmationStrategy,
+  Transaction,
+  VersionedTransaction,
+} from "@solana/web3.js";
 
 type subOrgFormData = {
   userName: string;
@@ -21,6 +32,15 @@ type TSignedMessage = {
   signature: string;
 } | null;
 
+type SolanaBalance = {
+  balance: number;
+} | null;
+
+type MemeBalance = {
+  tokenAccountAddr : PublicKey;
+  balance: number;
+} | null;
+
 type TWalletState = TWalletDetails | null;
 
 const humanReadableDateTime = (): string => {
@@ -34,6 +54,10 @@ export default function Home() {
   // Wallet is used as a proxy for logged-in state
   const [wallet, setWallet] = useState<TWalletState>(null);
   const [signedMessage, setSignedMessage] = useState<TSignedMessage>(null);
+  const [solanaBalance, setSolanaBalance] = useState<SolanaBalance>(null);
+  const [memeBalance, setMemeBalance] = useState<MemeBalance>(null);
+
+  const { handleSubmit: submitRefreshSolanaBalance } = useForm();
 
   const { register: subOrgFormRegister,  handleSubmit: subOrgFormSubmit } = useForm<subOrgFormData>();
   const { register: signingFormRegister, handleSubmit: signingFormSubmit } =
@@ -43,6 +67,12 @@ export default function Home() {
 
   const { handleSubmit: deleteFormSubmit } =
     useForm();
+  const { handleSubmit: submitCreateTokenAccount } =
+    useForm();
+  const { handleSubmit: submitRefreshMemeBalance } =
+    useForm();
+
+  const mintAccount = new PublicKey("3egm9YNvvsL2KrX1kg8p4ngWtm1P5AJJYruJrUSh87zP");
 
   // First, logout user if there is no current wallet set
   useEffect(() => {
@@ -52,6 +82,55 @@ export default function Home() {
       }
     })();
   });
+
+  useEffect(() => {
+    (async () => {
+      if (wallet) {
+        await refreshSolanaBalance();
+        try {
+          await refreshMemeBalance();
+        } catch (error) {
+          if (error instanceof TokenAccountNotFoundError) {
+            console.error("Account not found:", error);
+            setMemeBalance(null);
+          } else {
+            throw error;
+          }
+        }
+
+      }
+    })();
+  }, [wallet]);
+
+  const refreshSolanaBalance = async () => {
+    if (!wallet) {
+      throw new Error("wallet not found");
+    }
+
+    const balance = await connection.getBalance(new PublicKey(wallet.address));
+    setSolanaBalance({ balance: balance});
+  };
+
+  const refreshMemeBalance = async () => {
+    if (!wallet) {
+      throw new Error("wallet not found");
+    }
+
+    const addr = new PublicKey(wallet.address);
+    const tokenAccAddr = await getAssociatedTokenAddress(
+      mintAccount,
+      addr,
+      false,
+      TOKEN_2022_PROGRAM_ID, 
+    );
+
+    const tokenAccount = await getAccount(connection, tokenAccAddr, undefined, TOKEN_2022_PROGRAM_ID);
+    const tokenBalance = await connection.getTokenAccountBalance(tokenAccAddr);
+
+    console.log("Token Account:", tokenAccAddr.toBase58());
+    console.log("Token balance for user:", tokenBalance.value.uiAmountString);
+    setMemeBalance({ tokenAccountAddr: tokenAccAddr, balance: tokenBalance.value.uiAmount! });
+  };
 
   const deleteSubOrg = async () => {
     try {
@@ -65,6 +144,37 @@ export default function Home() {
       console.error(message);
       alert(message);
     }
+  };
+
+
+  const createTokenAccountForAddr = async () => {
+
+    if (!wallet) {
+      throw new Error("wallet not found");
+    }
+    let fromKey = new PublicKey(wallet.address);
+    const tokenAccAddr = await getAssociatedTokenAddress(
+      mintAccount,
+      fromKey, // owner
+      false,
+      TOKEN_2022_PROGRAM_ID, 
+    );
+
+    const signer = new TurnkeySigner({
+      client: passkeyClient!,
+      organizationId: wallet.subOrgId,
+    });
+  
+    await createTokenAccount(
+      signer,
+      connection,
+      wallet.address,
+      tokenAccAddr,
+      fromKey,
+      mintAccount
+    );
+    const message = `successfully create token account with addr ${tokenAccAddr.toBase58()}`;
+    alert(message);
   };
 
   const signMessage = async (data: signingFormData) => {
@@ -274,7 +384,7 @@ export default function Home() {
           </form>
         </div>
       )}
-      {wallet !== null &&  (
+      {/* {wallet !== null &&  (
         <div>
           <h2>Now let&apos;s sign something!</h2>
           <p className={styles.explainer}>
@@ -312,6 +422,65 @@ export default function Home() {
               value="Sign Message"
             />
           </form>
+        </div>
+      )} */}
+
+      {wallet !== null &&  (
+        <div>
+          Solana Balance: {" "}
+          <span className={styles.code}>{solanaBalance?.balance / LAMPORTS_PER_SOL}</span>
+          {" "}
+          Sols
+
+          <form className={styles.form} onSubmit={submitRefreshSolanaBalance(refreshSolanaBalance)}>
+            <input
+              className={styles.button}
+              type="submit"
+              value="Refresh"
+            />
+          </form>
+          <hr /> 
+        </div>
+      )}
+
+      {wallet && !memeBalance && (
+        <div>
+          Token Account Not Created. Created Now?
+          <form className={styles.form} onSubmit={submitCreateTokenAccount(createTokenAccountForAddr)}>
+            <input
+              className={styles.button}
+              type="submit"
+              value="Create"
+            />
+          </form>
+          <hr /> 
+        </div>
+      )}
+
+      {memeBalance && (
+        <div>
+          <a
+            href="https://solana.fm/address/3egm9YNvvsL2KrX1kg8p4ngWtm1P5AJJYruJrUSh87zP/transactions?cluster=devnet-solana"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+          Meme Coin
+          </a>
+          <br />
+          <br />
+          Token Account address: <br />
+          <span className={styles.code}>{memeBalance.tokenAccountAddr.toBase58()}</span>
+          <br />
+          <br />
+          Balance: {memeBalance.balance}
+          <form className={styles.form} onSubmit={submitRefreshMemeBalance(refreshMemeBalance)}>
+            <input
+              className={styles.button}
+              type="submit"
+              value="Refresh"
+            />
+          </form>
+          <hr /> 
         </div>
       )}
 

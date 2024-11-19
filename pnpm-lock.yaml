@@ -32,6 +32,9 @@ importers:
       '@turnkey/sdk-server':
         specifier: 1.6.0
         version: 1.6.0(encoding@0.1.13)
+      '@turnkey/solana':
+        specifier: ^1.0.2
+        version: 1.0.2(bufferutil@4.0.8)(encoding@0.1.13)(utf-8-validate@5.0.10)
       '@turnkey/webauthn-stamper':
         specifier: 0.5.0
         version: 0.5.0
@@ -391,6 +394,10 @@ packages:
 
   '@turnkey/sdk-server@1.6.0':
     resolution: {integrity: sha512-8fY03CVB4Im19yrx0YuGoOq3au2b6fqVBW79Dwz8Nk2rTNhSTd3RuUa7fdwmJF2cMP5udg1DcXDXQCGzRr9ZZA==}
+    engines: {node: '>=18.0.0'}
+
+  '@turnkey/solana@1.0.2':
+    resolution: {integrity: sha512-c7YLu8UyHta58OPTCtRj7HjnR9DKItZfQw1T5rUrSet1k8nU+QoD8HwYEN8d3skEU8jOEwjGkhnEqQhB2KLIiA==}
     engines: {node: '>=18.0.0'}
 
   '@turnkey/webauthn-stamper@0.5.0':
@@ -2187,6 +2194,17 @@ snapshots:
       elliptic: 6.5.5
     transitivePeerDependencies:
       - encoding
+
+  '@turnkey/solana@1.0.2(bufferutil@4.0.8)(encoding@0.1.13)(utf-8-validate@5.0.10)':
+    dependencies:
+      '@solana/web3.js': 1.95.4(bufferutil@4.0.8)(encoding@0.1.13)(utf-8-validate@5.0.10)
+      '@turnkey/http': 2.16.0(encoding@0.1.13)
+      '@turnkey/sdk-browser': 1.9.0(encoding@0.1.13)
+      '@turnkey/sdk-server': 1.6.0(encoding@0.1.13)
+    transitivePeerDependencies:
+      - bufferutil
+      - encoding
+      - utf-8-validate
 
   '@turnkey/webauthn-stamper@0.5.0':
     dependencies:

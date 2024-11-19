@@ -7,6 +7,9 @@ import {
   Transaction,
   VersionedTransaction,
 } from "@solana/web3.js";
+import { TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
+import type { TurnkeySigner } from "@turnkey/solana";
+import { createAssociatedTokenAccountInstruction } from "@solana/spl-token";
 import bs58 from "bs58";
 
 export function print(header: string, body: string): void {
@@ -111,4 +114,38 @@ export async function getConfirmationStrategy(
     lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
     signature,
   };
+}
+
+
+export async function createTokenAccount(
+  turnkeySigner: TurnkeySigner,
+  connection: Connection,
+  solAddress: string,
+  tokenAccount: PublicKey,
+  owner: PublicKey,
+  mintAccount: PublicKey,
+): Promise<any> {
+  const fromKey = new PublicKey(solAddress);
+
+  // For warchest
+  const createTokenAccountTx = new Transaction().add(
+    createAssociatedTokenAccountInstruction(
+      fromKey, // payer
+      tokenAccount, // ata
+      owner, // owner
+      mintAccount, // mint
+      TOKEN_2022_PROGRAM_ID
+    )
+  );
+
+  // Get a recent block hash
+  createTokenAccountTx.recentBlockhash = await recentBlockhash();
+  // Set the signer
+  createTokenAccountTx.feePayer = fromKey;
+
+  await turnkeySigner.addSignature(createTokenAccountTx, solAddress);
+
+  console.log("Broadcasting token account creation transaction...");
+
+  await broadcast(connection, createTokenAccountTx);
 }
