@@ -3,20 +3,15 @@ import { Turnkey, TurnkeyApiTypes } from "@turnkey/sdk-server";
 import { refineNonNull } from "@/utils";
 import { TWalletDetails } from "@/types";
 
-// Default path for the first Ethereum address in a new HD wallet.
-// See https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki, paths are in the form:
-//     m / purpose' / coin_type' / account' / change / address_index
-// - Purpose is a constant set to 44' following the BIP43 recommendation.
-// - Coin type is set to 60 (ETH) -- see https://github.com/satoshilabs/slips/blob/master/slip-0044.md
-// - Account, Change, and Address Index are set to 0
-import { DEFAULT_ETHEREUM_ACCOUNTS } from "@turnkey/sdk-server";
+import { DEFAULT_SOLANA_ACCOUNTS } from "@turnkey/sdk-server";
 
 type TAttestation = TurnkeyApiTypes["v1Attestation"];
 
 type CreateSubOrgWithPrivateKeyRequest = {
+  email: string;
+  userName: string;
   subOrgName: string;
   challenge: string;
-  privateKeyName: string;
   attestation: TAttestation;
 };
 
@@ -31,6 +26,7 @@ export default async function createUser(
   const createSubOrgRequest = req.body as CreateSubOrgWithPrivateKeyRequest;
 
   try {
+    console.log("Prepare to create suborg ", createSubOrgRequest);
     const turnkey = new Turnkey({
       apiBaseUrl: process.env.NEXT_PUBLIC_BASE_URL!,
       apiPrivateKey: process.env.API_PRIVATE_KEY!,
@@ -38,7 +34,7 @@ export default async function createUser(
       defaultOrganizationId: process.env.NEXT_PUBLIC_ORGANIZATION_ID!,
     });
 
-    const apiClient = turnkey.api(); // TODO: rename to apiClient
+    const apiClient = turnkey.apiClient();
 
     const walletName = `Default ETH Wallet`;
 
@@ -47,7 +43,8 @@ export default async function createUser(
       rootQuorumThreshold: 1,
       rootUsers: [
         {
-          userName: "New user",
+          userName: createSubOrgRequest.userName,
+          userEmail: createSubOrgRequest.email,
           apiKeys: [],
           authenticators: [
             {
@@ -56,11 +53,12 @@ export default async function createUser(
               attestation: createSubOrgRequest.attestation,
             },
           ],
+          oauthProviders: [],
         },
       ],
       wallet: {
         walletName: walletName,
-        accounts: DEFAULT_ETHEREUM_ACCOUNTS,
+        accounts: DEFAULT_SOLANA_ACCOUNTS,
       },
     });
 

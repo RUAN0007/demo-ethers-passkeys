@@ -1,4 +1,3 @@
-import { TurnkeySigner } from "@turnkey/ethers";
 import { useTurnkey } from "@turnkey/sdk-react";
 import Image from "next/image";
 import axios from "axios";
@@ -6,9 +5,11 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import styles from "./index.module.css";
 import { TWalletDetails } from "../types";
+import { connect } from "../utils";
 
 type subOrgFormData = {
-  subOrgName: string;
+  userName: string;
+  email: string;
 };
 
 type signingFormData = {
@@ -27,16 +28,20 @@ const humanReadableDateTime = (): string => {
 };
 
 export default function Home() {
+  const connection = connect();
   const { turnkey, passkeyClient } = useTurnkey();
 
   // Wallet is used as a proxy for logged-in state
   const [wallet, setWallet] = useState<TWalletState>(null);
   const [signedMessage, setSignedMessage] = useState<TSignedMessage>(null);
 
-  const { handleSubmit: subOrgFormSubmit } = useForm<subOrgFormData>();
+  const { register: subOrgFormRegister,  handleSubmit: subOrgFormSubmit } = useForm<subOrgFormData>();
   const { register: signingFormRegister, handleSubmit: signingFormSubmit } =
     useForm<signingFormData>();
   const { register: _loginFormRegister, handleSubmit: loginFormSubmit } =
+    useForm();
+
+  const { handleSubmit: deleteFormSubmit } =
     useForm();
 
   // First, logout user if there is no current wallet set
@@ -48,38 +53,51 @@ export default function Home() {
     })();
   });
 
+  const deleteSubOrg = async () => {
+    try {
+      await passkeyClient!.deleteSubOrganization({
+        deleteWithoutExport: true,
+      });
+      setWallet(null);
+      alert("successfully deleted suborg");
+    } catch (e: any) {
+      const message = `caught error: ${e.toString()}`;
+      console.error(message);
+      alert(message);
+    }
+  };
+
   const signMessage = async (data: signingFormData) => {
     if (!wallet) {
       throw new Error("wallet not found");
     }
 
-    const ethersSigner = new TurnkeySigner({
-      client: passkeyClient!,
-      organizationId: wallet.subOrgId,
-      signWith: wallet.address,
-    });
-
+    // const signer = new TurnkeySigner({
+    //   client: passkeyClient!,
+    //   organizationId: wallet.subOrgId,
+    //   signWith: wallet.address,
+    // });
     
-    const signedMessage = await ethersSigner.signMessage(data.messageToSign);
+    // const signedMessage = await signer.signMessage(data.messageToSign);
 
-    setSignedMessage({
-      message: data.messageToSign,
-      signature: signedMessage,
-    });
+    // setSignedMessage({
+    //   message: data.messageToSign,
+    //   signature: signedMessage,
+    // });
   };
 
 
-  const createSubOrgAndWallet = async () => {
-    const subOrgName = `Turnkey Ethers+Passkey Demo - ${humanReadableDateTime()}`;
+  const createSubOrgAndWallet = async (data: subOrgFormData) => {
+    const subOrgName = `Turnkey Solana Demo - ${humanReadableDateTime()}`;
     const credential = await passkeyClient?.createUserPasskey({
       publicKey: {
         rp: {
           id: "localhost",
-          name: "Turnkey Ethers Passkey Demo",
+          name: "Turnkey Solana Passkey Demo",
         },
         user: {
-          name: subOrgName,
-          displayName: subOrgName,
+          name: data.userName,
+          displayName: data.userName,
         },
       },
     });
@@ -89,6 +107,8 @@ export default function Home() {
     }
 
     const res = await axios.post("/api/createSubOrg", {
+      email: data.email,
+      userName: data.userName,
       subOrgName: subOrgName,
       challenge: credential?.encodedChallenge,
       attestation: credential?.attestation,
@@ -159,7 +179,7 @@ export default function Home() {
         )}
         {wallet && (
           <div className={styles.info}>
-            ETH address: <br />
+            Solana address: <br />
             <span className={styles.code}>{wallet.address}</span>
           </div>
         )}
@@ -214,6 +234,16 @@ export default function Home() {
             className={styles.form}
             onSubmit={subOrgFormSubmit(createSubOrgAndWallet)}
           >
+            <input
+              className={styles.input}
+              {...subOrgFormRegister("userName")}
+              placeholder="username"
+            />
+            <input
+              className={styles.input}
+              {...subOrgFormRegister("email")}
+              placeholder="email"
+            />
             <input
               className={styles.button}
               type="submit"
@@ -283,6 +313,16 @@ export default function Home() {
             />
           </form>
         </div>
+      )}
+
+      {wallet !== null && (
+          <form className={styles.form} onSubmit={deleteFormSubmit(deleteSubOrg)}>
+            <input
+              className={styles.button}
+              type="submit"
+              value="Delete this suborg"
+            />
+          </form>
       )}
     </main>
   );
