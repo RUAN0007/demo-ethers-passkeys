@@ -6,8 +6,12 @@ import { useState, useEffect, use } from "react";
 import { useForm } from "react-hook-form";
 import styles from "./index.module.css";
 import { TWalletDetails } from "../types";
+import { generateP256KeyPair, decryptExportBundle } from "@turnkey/crypto";
 import { connect, createTokenAccount, createTokenTransfer } from "../utils";
 import { getAccount, getAssociatedTokenAddress, TOKEN_2022_PROGRAM_ID, TokenAccountNotFoundError} from "@solana/spl-token";
+import { Keypair } from '@solana/web3.js';
+import bs58 from 'bs58';
+
 import {
   Connection,
   sendAndConfirmRawTransaction,
@@ -65,6 +69,10 @@ type InitRecoveryFormData = {
   subOrgID : string;
 };
 
+type PrivatekeyFormData = {
+  privateKey: string;
+}
+
 const es256 = -7;
 const rs256 = -257;
 
@@ -77,6 +85,10 @@ const humanReadableDateTime = (): string => {
 export default function Home() {
   const connection = connect();
   const { turnkey, authIframeClient, passkeyClient } = useTurnkey();
+
+  const keyPair = generateP256KeyPair();
+  const tePrivatekey = keyPair.privateKey;
+  const tePubKey = keyPair.publicKeyUncompressed;
 
   // Wallet is used as a proxy for logged-in state
   const [wallet, setWallet] = useState<TWalletState>(null);
@@ -100,6 +112,10 @@ export default function Home() {
     useForm();
   const { register: memeTransferRegister, handleSubmit: submitMemeTransfer } =
     useForm<MemeTransferFormData>();
+  const { register: privateKeyValidationRegister, handleSubmit: submitPrivateKeyValidation } =
+    useForm<PrivatekeyFormData>();
+  const { handleSubmit: submitExportPrivateKey } =
+    useForm();
 
   const mintAccount = new PublicKey("3egm9YNvvsL2KrX1kg8p4ngWtm1P5AJJYruJrUSh87zP");
 
@@ -130,6 +146,29 @@ export default function Home() {
       }
     })();
   }, [wallet]);
+
+  const exportPrivatekey = async () => {
+    if (!wallet) {
+      throw new Error("wallet not found");
+    }
+    if (!passkeyClient) {
+      throw new Error("passkey client not found");
+    }
+    const addr = wallet!.address;
+    const exportResult = await passkeyClient.exportWalletAccount({
+      address: addr,
+      targetPublicKey: tePubKey,
+    });
+
+    const decryptedBundle = await decryptExportBundle({
+      exportBundle: exportResult.exportBundle,
+      embeddedKey: tePrivatekey,
+      organizationId: wallet.subOrgId,
+      returnMnemonic: false,
+    });
+
+    alert(`Recovered private key: ${decryptedBundle}`);
+  };
 
   const transferMeme = async (data: MemeTransferFormData) => {
     if (!wallet) {
@@ -202,6 +241,21 @@ export default function Home() {
       alert("successfully deleted suborg");
     } catch (e: any) {
       const message = `caught error: ${e.toString()}`;
+      console.error(message);
+      alert(message);
+    }
+  };
+
+  const validatePrivateKey = async (data: PrivatekeyFormData) => {
+    try {
+      const privateKey = Buffer.from(data.privateKey, 'hex');
+      alert("number of bytes: " + privateKey.length);
+      const keypair = Keypair.fromSeed(privateKey);
+      const publicKey = keypair.publicKey.toBase58();
+      alert("public key: " + publicKey);
+      // You can now use the public key as needed
+    } catch (e: any) {
+      const message = `Invalid private key: ${e.toString()}`;
       console.error(message);
       alert(message);
     }
@@ -316,8 +370,8 @@ export default function Home() {
       await passkeyClient?.createUserPasskey({
         publicKey: {
           pubKeyCredParams: [
-            { type: publicKey, alg: es256 },
-            { type: publicKey, alg: rs256 },
+            { type: tePubKey, alg: es256 },
+            { type: tePubKey, alg: rs256 },
           ],
           rp: {
             id: "localhost",
@@ -469,7 +523,7 @@ export default function Home() {
       {!wallet && (
         <div>
           <h2>Create a new wallet</h2>
-          <p className={styles.explainer}>
+          {/* <p className={styles.explainer}>
             We&apos;ll prompt your browser to create a new passkey. The details
             (credential ID, authenticator data, client data, attestation) will
             be used to create a new{" "}
@@ -492,7 +546,7 @@ export default function Home() {
             <br />
             This request to Turnkey will be created and signed by the backend
             API key pair.
-          </p>
+          </p> */}
           <form
             className={styles.form}
             onSubmit={subOrgFormSubmit(createSubOrgAndWallet)}
@@ -516,7 +570,7 @@ export default function Home() {
           <br />
           <br />
           <h2>Already created your wallet? Log back in</h2>
-          <p className={styles.explainer}>
+          {/* <p className={styles.explainer}>
             Based on the parent organization ID and a stamp from your passkey
             used to created the sub-organization and wallet, we can look up your
             sub-organization using the{" "}
@@ -527,7 +581,7 @@ export default function Home() {
             >
               Whoami endpoint.
             </a>
-          </p>
+          </p> */}
           <form className={styles.form} onSubmit={loginFormSubmit(login)}>
             <input
               className={styles.button}
@@ -733,6 +787,35 @@ export default function Home() {
             />
           </form>
           <hr /> 
+        </div>
+      )}
+
+      {wallet !== null && (
+        <div>
+          <h2>Export Private Key</h2>
+          <form className={styles.form} onSubmit={submitExportPrivateKey(exportPrivatekey)}>
+            <input
+              className={styles.button}
+              type="submit"
+              value="Export Private Key"
+            />
+          </form>
+
+          <br />
+
+          <h2>Validate Private Key</h2>
+          <form className={styles.form} onSubmit={submitPrivateKeyValidation(validatePrivateKey)}>
+            <input
+              className={styles.input}
+              {...privateKeyValidationRegister("privateKey")}
+              placeholder="pk in bs58"
+            />
+            <input
+              className={styles.button}
+              type="submit"
+              value="Validate Private Key"
+            />
+          </form>
         </div>
       )}
 

@@ -17,6 +17,9 @@ importers:
       '@turnkey/api-key-stamper':
         specifier: 0.4.0
         version: 0.4.0
+      '@turnkey/crypto':
+        specifier: ^2.1.0
+        version: 2.1.0
       '@turnkey/ethers':
         specifier: ^1.0.6
         version: 1.0.6(encoding@0.1.13)(ethers@6.10.0(bufferutil@4.0.8)(utf-8-validate@5.0.10))
@@ -2456,7 +2459,7 @@ snapshots:
 
   bs58check@3.0.1:
     dependencies:
-      '@noble/hashes': 1.4.0
+      '@noble/hashes': 1.5.0
       bs58: 5.0.0
 
   buffer@6.0.3:

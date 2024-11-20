@@ -185,5 +185,5 @@ export async function createTokenTransfer(
   console.log("Broadcasting token transfer transaction...");
 
   const txnHash = await broadcast(connection, transferTx);
-  return txnHash;
+  return txnHash
 }

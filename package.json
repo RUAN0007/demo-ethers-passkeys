@@ -16,6 +16,7 @@
     "@solana/spl-token": "^0.4.9",
     "@solana/web3.js": "^1.95.4",
     "@turnkey/api-key-stamper": "0.4.0",
+    "@turnkey/crypto": "^2.1.0",
     "@turnkey/ethers": "^1.0.6",
     "@turnkey/http": "^2.10.0",
     "@turnkey/sdk-browser": "0.1.0",
