@@ -48,13 +48,35 @@ type MemeBalance = {
 
 type TWalletState = TWalletDetails | null;
 
+type InitRecoveryResponse = {
+  userId: string;
+  organizationId: string;
+};
+
+/**
+ * Type definitions for the form data (client-side forms)
+ */
+type RecoverUserFormData = {
+  recoveryBundle: string;
+  authenticatorName: string;
+};
+type InitRecoveryFormData = {
+  email: string;
+  subOrgID : string;
+};
+
+const es256 = -7;
+const rs256 = -257;
+
+const publicKey = "public-key";
+
 const humanReadableDateTime = (): string => {
   return new Date().toLocaleString().replaceAll("/", "-").replaceAll(":", ".");
 };
 
 export default function Home() {
   const connection = connect();
-  const { turnkey, passkeyClient } = useTurnkey();
+  const { turnkey, authIframeClient, passkeyClient } = useTurnkey();
 
   // Wallet is used as a proxy for logged-in state
   const [wallet, setWallet] = useState<TWalletState>(null);
@@ -234,6 +256,98 @@ export default function Home() {
     //   signature: signedMessage,
     // });
   };
+
+  const [initRecoveryResponse, setInitRecoveryResponse] =
+    useState<InitRecoveryResponse | null>(null);
+  const {
+    register: initRecoveryFormRegister,
+    handleSubmit: initRecoveryFormSubmit,
+  } = useForm<InitRecoveryFormData>();
+  const {
+    register: recoverUserFormRegister,
+    handleSubmit: recoverUserFormSubmit,
+  } = useForm<RecoverUserFormData>();
+  
+
+  const initRecovery = async (data: InitRecoveryFormData) => {
+    if (authIframeClient === null) {
+      throw new Error("cannot initialize recovery without an iframe");
+    }
+
+    const response = await axios.post("/api/recoverSubOrg", {
+      email: data.email,
+      targetPublicKey: authIframeClient!.iframePublicKey!,
+      subOrgID: data.subOrgID,
+    });
+    setInitRecoveryResponse(response.data);
+
+    // if (passkeyClient === null) {
+    //   throw new Error("cannot initialize recovery without a passkeyClient");
+    // }
+
+    // const emailRecoveryResponse = await passkeyClient!
+    // .initUserEmailRecovery({
+    //   email: data.email,
+    //   targetPublicKey: authIframeClient!.iframePublicKey!,
+    // });
+
+    // const { userId } = emailRecoveryResponse;    
+    // alert(`Successfully initialized recovery for user ${userId}`);
+  };
+
+  const recoverUser = async (data: RecoverUserFormData) => {
+    if (authIframeClient === null) {
+      throw new Error("iframe client is null");
+    }
+    if (initRecoveryResponse === null) {
+      throw new Error("initRecoveryResponse is null");
+    }
+
+    try {
+      await authIframeClient!.injectCredentialBundle(data.recoveryBundle);
+    } catch (e) {
+      const msg = `error while injecting bundle: ${e}`;
+      console.error(msg);
+      alert(msg);
+      return;
+    }
+
+    const { encodedChallenge, attestation } =
+      await passkeyClient?.createUserPasskey({
+        publicKey: {
+          pubKeyCredParams: [
+            { type: publicKey, alg: es256 },
+            { type: publicKey, alg: rs256 },
+          ],
+          rp: {
+            id: "localhost",
+            name: "Turnkey Recovered Passkey Demo",
+          },
+          user: {
+            name: data.authenticatorName,
+            displayName: data.authenticatorName,
+          },
+        },
+      })!;
+
+    const response = await authIframeClient!.recoverUser({
+      organizationId: initRecoveryResponse.organizationId, // need to specify the suborg ID
+      userId: initRecoveryResponse.userId,
+      authenticator: {
+        authenticatorName: data.authenticatorName,
+        challenge: encodedChallenge,
+        attestation,
+      },
+    });
+
+    console.log(response);
+
+    // Instead of simply alerting, redirect the user to your app's login page.
+    alert(
+      "SUCCESS! Authenticator added. Recovery flow complete. Try logging back in!"
+    );
+  };
+  
 
 
   const createSubOrgAndWallet = async (data: subOrgFormData) => {
@@ -423,6 +537,82 @@ export default function Home() {
           </form>
         </div>
       )}
+
+      {!wallet && !authIframeClient && <p>Loading...</p>}
+      {!wallet && authIframeClient &&
+        authIframeClient.iframePublicKey &&
+        initRecoveryResponse === null && (
+          <div>
+          <br />
+          <br />
+          <h2>Lost your Device? Recover By Adding New Passkey</h2>
+
+
+          <form
+            className={styles.form}
+            onSubmit={initRecoveryFormSubmit(initRecovery)}
+          >
+            <label className={styles.label}>
+              Email
+              <input
+                className={styles.input}
+                {...initRecoveryFormRegister("email")}
+                placeholder="Email"
+              />
+            </label>
+            <label className={styles.label}>
+              SubOrgID
+              <input
+                className={styles.input}
+                {...initRecoveryFormRegister("subOrgID")}
+                placeholder="SubOrgID"
+              />
+            </label>
+            <label className={styles.label}>
+              Encryption Target from iframe:
+              <br />
+              <code title={authIframeClient.iframePublicKey!}>
+                {authIframeClient.iframePublicKey!.substring(0, 30)}...
+              </code>
+            </label>
+
+            <input
+              className={styles.button}
+              type="submit"
+              value="Start Recovery"
+            />
+          </form>
+         </div>
+        )}
+
+      {!wallet && authIframeClient &&
+        authIframeClient.iframePublicKey &&
+        initRecoveryResponse !== null && (
+          <form
+            className={styles.form}
+            onSubmit={recoverUserFormSubmit(recoverUser)}
+          >
+            <label className={styles.label}>
+              Recovery Bundle
+              <input
+                className={styles.input}
+                {...recoverUserFormRegister("recoveryBundle")}
+                placeholder="Paste your recovery bundle here"
+              />
+            </label>
+            <label className={styles.label}>
+              New authenticator name
+              <input
+                className={styles.input}
+                {...recoverUserFormRegister("authenticatorName")}
+                placeholder="Authenticator Name"
+              />
+            </label>
+
+            <input className={styles.button} type="submit" value="Recover" />
+          </form>
+        )}
+
       {/* {wallet !== null &&  (
         <div>
           <h2>Now let&apos;s sign something!</h2>
