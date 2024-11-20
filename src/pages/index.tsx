@@ -249,7 +249,6 @@ export default function Home() {
   const validatePrivateKey = async (data: PrivatekeyFormData) => {
     try {
       const privateKey = Buffer.from(data.privateKey, 'hex');
-      alert("number of bytes: " + privateKey.length);
       const keypair = Keypair.fromSeed(privateKey);
       const publicKey = keypair.publicKey.toBase58();
       alert("public key: " + publicKey);
@@ -370,8 +369,8 @@ export default function Home() {
       await passkeyClient?.createUserPasskey({
         publicKey: {
           pubKeyCredParams: [
-            { type: tePubKey, alg: es256 },
-            { type: tePubKey, alg: rs256 },
+            { type: publicKey, alg: es256 },
+            { type: publicKey, alg: rs256 },
           ],
           rp: {
             id: "localhost",
@@ -808,7 +807,7 @@ export default function Home() {
             <input
               className={styles.input}
               {...privateKeyValidationRegister("privateKey")}
-              placeholder="pk in bs58"
+              placeholder="pk in hex"
             />
             <input
               className={styles.button}
